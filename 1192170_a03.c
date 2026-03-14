@@ -40,17 +40,19 @@ typedef struct thread //represents a single thread, you can add more members if 
 } Thread;
 
 typedef struct NextThread {
-	int odd_index;
-	int even_index; //TODO: Remove this?
-
 	int start_index_count;
 	int* start_indices;
-	int live_thread_count;
 } NextThread;
+
+typedef struct StarveSem {
+	sem_t* starve_resolution_sem;
+	sem_t* starve_pend_sem;
+} StarveSem;
 
 //you can add more functions here if required
 void preProcessThreads(Thread* threads, int t_count);
 NextThread getNextThread(Thread* threads, int t_count, time_t currentTime);
+StarveSem checkForStarvation(Thread* threads, int t_count);
 
 void* threadRun(void* t);//the thread function, the code executed by each thread
 int readFile(char* fileName, Thread** threads);//function to read the file content and build array of threads
@@ -105,7 +107,9 @@ int main(int argc, char *argv[])
 
 			for (int i = 0; i < next.start_index_count; i++) {
 				Thread *t = &(threads[next.start_indices[i]]);
+				t->state = STARTED;
 				pthread_create(&(t->handle), NULL, threadRun, t);
+				threadCount--;
 
 				if (!started) {
 					// The first thread, in terms of creation time, enters first in its critical section.
@@ -117,9 +121,27 @@ int main(int argc, char *argv[])
 
 			free(next.start_indices);
 
-			threadCount = next.live_thread_count;
-			//printf("threadCount: %d\n", threadCount);
+			//printf("[%ld] threadCount: %d\n", currentTime, threadCount);
 		}
+	}
+
+	// Do starvation prevention since all the new threads that will ever show up have been started
+	StarveSem starvation_sem = checkForStarvation(threads, threads_ptr_len);
+	while (starvation_sem.starve_resolution_sem != NULL) {
+		// Since we later pend on the non-starved sem we need to make sure any extra counts are removed from having an unblanced load
+		if (sem_init(starvation_sem.starve_pend_sem, 0, 0) != 0) {
+			printf("sem_init on starvation prevention failed");
+			return 0;
+		}
+
+		// printf("[ALERT] [%ld] We're starved!\n", currentTime);
+		// Let the starved thread make progress
+		sem_post(starvation_sem.starve_resolution_sem);
+
+		// Wait for it to finish befre checking if we need to keep doing starve prevention
+		sem_wait(starvation_sem.starve_pend_sem);
+
+		starvation_sem = checkForStarvation(threads, threads_ptr_len);
 	}
 
 	// Don't terminate until all the threads are done
@@ -149,19 +171,40 @@ void preProcessThreads(Thread* threads, int t_count) {
 	}
 }
 
-NextThread getNextThread(Thread* threads, int t_count, time_t currentTime) {
-	NextThread next;
-	next.odd_index = -1;
-	next.even_index = -1; //TODO: Remove this?
-	next.start_index_count = 0;
-	next.start_indices = NULL;
-	next.live_thread_count = 0;
+StarveSem checkForStarvation(Thread* threads, int t_count) {
+	StarveSem ret;
+	ret.starve_pend_sem = ret.starve_resolution_sem = NULL;
+	int even_count = 0;
+	int odd_count = 0;
 
 	for (int i = 0; i < t_count; i++) {
-		if (threads[i].state != TERMINATED) {
-			next.live_thread_count++;
+		if (threads[i].state == STARTED && threads[i].id_y_part % 2 == 0) {
+			even_count++;
+		} else if (threads[i].state == STARTED && threads[i].id_y_part % 2 == 1) {
+			odd_count++;
 		}
+	}
 
+	// Select a sem to post if there are no more threads coming and one type has run out
+	if (odd_count == 0 && even_count != 0) {
+		ret.starve_resolution_sem = &sem_even;
+		ret.starve_pend_sem = &sem_odd;
+	}
+	
+	if (even_count == 0 && odd_count != 0) {
+		ret.starve_resolution_sem = &sem_odd;
+		ret.starve_pend_sem = &sem_even;
+	}
+
+	return ret;
+}
+
+NextThread getNextThread(Thread* threads, int t_count, time_t currentTime) {
+	NextThread next;
+	next.start_index_count = 0;
+	next.start_indices = NULL;
+
+	for (int i = 0; i < t_count; i++) {
 		if (threads[i].state == NEW && currentTime == (time_t)threads[i].startTime) {
 			// Enlarge array by 1
 			next.start_indices = realloc(next.start_indices, sizeof(int) * (next.start_index_count + 1));
@@ -170,8 +213,6 @@ NextThread getNextThread(Thread* threads, int t_count, time_t currentTime) {
 			next.start_indices[next.start_index_count] = i;
 			next.start_index_count++;
 		}
-
-		// TODO: Add starvation detection
 	}
 
 	return next;
