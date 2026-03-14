@@ -6,6 +6,7 @@
 #include <semaphore.h>
 #include <sys/stat.h>
 #include <time.h>
+#include <stdbool.h>
 
 #define FILE_DELIMETERS ";\r\n"
 
@@ -33,18 +34,22 @@ typedef struct thread //represents a single thread, you can add more members if 
 	pthread_t handle;//you can use it as per your desire
 	int retVal;//you can use it as per your desire
 
-	sem_t* sem_pend; // The sem for this thread to wait for
+	sem_t* sem_pend; // The sem that this thread waits for
+	sem_t* sem_post; // The sem that this thread will post when done
 	int id_y_part;
 } Thread;
 
 typedef struct NextThread {
 	int odd_index;
-	int even_index;
+	int even_index; //TODO: Remove this?
+
+	int start_index_count;
+	int* start_indices;
 } NextThread;
 
 //you can add more functions here if required
 void preProcessThreads(Thread* threads, int t_count);
-NextThread getNextThread(Thread* threads, int t_count);
+NextThread getNextThread(Thread* threads, int t_count, time_t currentTime);
 
 void* threadRun(void* t);//the thread function, the code executed by each thread
 int readFile(char* fileName, Thread** threads);//function to read the file content and build array of threads
@@ -56,6 +61,7 @@ int main(int argc, char *argv[])
 	Thread* threads = NULL;//This is your list of threads, use it in suitable way; remove the comment when ready to use
 	int threadCount = -1;
 	int threads_ptr_len = -1;
+	bool started = false;
 
 	//input file must be accepted as command line argument. You can write the suitable code here to check
 	//command line arguments and read the content of the file using readFile().
@@ -83,11 +89,47 @@ int main(int argc, char *argv[])
 	preProcessThreads(threads, threads_ptr_len);
 
 	startClock();
+	time_t currentTime = -1;
+	NextThread next;
 
     //write some suitable code here to initiate, progress and terminate the threads following the requirements
 
-	//while (threadCount > 0)
-	NextThread next = getNextThread(threads, threads_ptr_len);
+	while (threadCount > 0) {
+		if(getCurrentTime() == currentTime + 1)//this condition simulates the clock ticks and calls scheduler whenever local clock time progresses by 1
+		{
+			currentTime++;
+			
+			next = getNextThread(threads, threads_ptr_len, currentTime);
+			//printf("Next even: %d, odd: %d, start_count: %d\n", next.even_index, next.odd_index, next.start_index_count);
+
+			for (int i = 0; i < next.start_index_count; i++) {
+				Thread *t = &(threads[next.start_indices[i]]);
+				pthread_create(&(t->handle), NULL, threadRun, t);
+
+				if (!started) {
+					// The first thread, in terms of creation time, enters first in its critical section.
+					// TODO: What if two threads have the same creation time?
+					sem_post(threads[next.start_indices[0]].sem_pend);
+					started = true;
+				}
+			}
+
+			free(next.start_indices);
+
+			if(currentTime == 22){
+				// TODO: Find a way to get this decremented normally
+				// Maybe getNextThread can keep track of this and return it in the next struct
+				threadCount = 0;
+			}
+		}
+	}
+
+	// Don't terminate until all the threads are done
+	for (int i = 0; i < threads_ptr_len; i++) {
+		pthread_join(threads[i].handle, NULL);
+	}
+
+	free(threads);
 
 	return threadCount;
 }
@@ -99,25 +141,34 @@ void preProcessThreads(Thread* threads, int t_count) {
 
 		if (threads[i].id_y_part % 2 == 0) {
 			threads[i].sem_pend = &sem_even;
+			threads[i].sem_post = &sem_odd;
 			//printf("Thread id: %s, id_y_part %d, is EVEN\n", threads[i].tid, threads[i].id_y_part);
 		} else {
 			threads[i].sem_pend = &sem_odd;
+			threads[i].sem_post = &sem_even;
 			//printf("Thread id: %s, id_y_part %d, is ODD\n", threads[i].tid, threads[i].id_y_part);
 		}
 	}
 }
 
-NextThread getNextThread(Thread* threads, int t_count) {
+NextThread getNextThread(Thread* threads, int t_count, time_t currentTime) {
 	NextThread next;
 	next.odd_index = -1;
-	next.even_index = -1;
+	next.even_index = -1; //TODO: Remove this?
+	next.start_index_count = 0;
+	next.start_indices = NULL;
 
-	for (int i = t_count-1; i >= 0; i--) {
-		if (threads[i].state == NEW && threads[i].id_y_part % 2 == 0) {
-			next.even_index = i;
-		} else if (threads[i].state == NEW && threads[i].id_y_part % 2 == 1) {
-			next.odd_index = i;
+	for (int i = 0; i < t_count; i++) {
+		if (threads[i].state == NEW && currentTime == (time_t)threads[i].startTime) {
+			// Enlarge array by 1
+			next.start_indices = realloc(next.start_indices, sizeof(int) * (next.start_index_count + 1));
+
+			// TODO: If two threads have the same start time does it matter which one gets the logStart() called first?
+			next.start_indices[next.start_index_count] = i;
+			next.start_index_count++;
 		}
+
+		// TODO: Add starvation detection
 	}
 
 	return next;
@@ -193,7 +244,7 @@ int readFile(char* fileName, Thread** threads)//implement this method as per you
 			strncpy((*threads)[tempThreadCount].tid, tok, 4);
 			(*threads)[tempThreadCount].state = NEW;
 			(*threads)[tempThreadCount].retVal = 0; //TODO: Figure out what this is good for
-			(*threads)[tempThreadCount].handle = 0; //TODO: Figure out what this is good for
+			(*threads)[tempThreadCount].handle = 0;
 
 			(*threads)[tempThreadCount].sem_pend = NULL;
 			(*threads)[tempThreadCount].id_y_part = -1;
@@ -232,13 +283,16 @@ void* threadRun(void* t)//implement this function in a suitable way
 	logStart(((Thread*)t)->tid);
 	
 //your entry section synchronization logic will appear here
+	sem_wait(((Thread*)t)->sem_pend);
 
 	//critical section starts here, it has only the following printf statement
 	printf("[%ld] Thread %s is in its critical section\n",getCurrentTime(), ((Thread*)t)->tid);
 	//critical section ends here
 
 //your exit section synchronization logic will appear here
+	sem_post(((Thread*)t)->sem_post);
 
+	((Thread*)t)->state = TERMINATED;
 	logFinish(((Thread*)t)->tid);
 	return NULL;
 }
