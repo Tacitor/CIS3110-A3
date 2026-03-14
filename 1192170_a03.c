@@ -134,8 +134,9 @@ int main(int argc, char *argv[])
 			return 0;
 		}
 
-		// printf("[ALERT] [%ld] We're starved!\n", currentTime);
+		//printf("[ALERT] [%ld] We're starved!\n", currentTime);
 		// Let the starved thread make progress
+		// TODO: Based on race conditions somethins t01 goes first and other times t05. Does this matter?
 		sem_post(starvation_sem.starve_resolution_sem);
 
 		// Wait for it to finish befre checking if we need to keep doing starve prevention
