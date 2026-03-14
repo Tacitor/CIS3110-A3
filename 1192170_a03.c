@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <pthread.h>
+#include <semaphore.h>
 #include <sys/stat.h>
 #include <time.h>
 
@@ -15,6 +16,15 @@ void startClock();//function to start program clock
 long getCurrentTime();//function to check current time since clock was started
 time_t programClock;//the global timer/clock for the program
 
+sem_t sem_even;
+sem_t sem_odd;
+
+enum State {
+	NEW=0,
+	STARTED,
+	TERMINATED
+} State;
+
 typedef struct thread //represents a single thread, you can add more members if required
 {
 	char tid[4];//id of the thread as read from file, set in readFile() for you
@@ -22,9 +32,19 @@ typedef struct thread //represents a single thread, you can add more members if 
 	int state;//you can use it as per your desire
 	pthread_t handle;//you can use it as per your desire
 	int retVal;//you can use it as per your desire
+
+	sem_t* sem_pend; // The sem for this thread to wait for
+	int id_y_part;
 } Thread;
 
+typedef struct NextThread {
+	int odd_index;
+	int even_index;
+} NextThread;
+
 //you can add more functions here if required
+void preProcessThreads(Thread* threads, int t_count);
+NextThread getNextThread(Thread* threads, int t_count);
 
 void* threadRun(void* t);//the thread function, the code executed by each thread
 int readFile(char* fileName, Thread** threads);//function to read the file content and build array of threads
@@ -35,6 +55,7 @@ int main(int argc, char *argv[])
 
 	Thread* threads = NULL;//This is your list of threads, use it in suitable way; remove the comment when ready to use
 	int threadCount = -1;
+	int threads_ptr_len = -1;
 
 	//input file must be accepted as command line argument. You can write the suitable code here to check
 	//command line arguments and read the content of the file using readFile().
@@ -48,18 +69,58 @@ int main(int argc, char *argv[])
         return 0;
     }
 
-	threadCount = readFile(argv[1], &threads);
-
-	// TODO: Remove this
-	for (int i = 0; i < threadCount; i++) {
-		printf("Thread id: %s, start time %d\n", threads[i].tid, threads[i].startTime);
+	if (sem_init(&sem_even, 0, 0) != 0) {
+		printf("sem_init on sem_even failed");
+		return 0;
 	}
+
+	if (sem_init(&sem_odd, 0, 0) != 0) {
+		printf("sem_init on sem_odd failed");
+		return 0;
+	}
+
+	threads_ptr_len = threadCount = readFile(argv[1], &threads);
+	preProcessThreads(threads, threads_ptr_len);
 
 	startClock();
 
     //write some suitable code here to initiate, progress and terminate the threads following the requirements
 
+	//while (threadCount > 0)
+	NextThread next = getNextThread(threads, threads_ptr_len);
+
 	return threadCount;
+}
+
+void preProcessThreads(Thread* threads, int t_count) {
+
+	for (int i = 0; i < t_count; i++) {
+		threads[i].id_y_part = threads[i].tid[2] - 48; //Convert from ascii single digit to decimal value
+
+		if (threads[i].id_y_part % 2 == 0) {
+			threads[i].sem_pend = &sem_even;
+			//printf("Thread id: %s, id_y_part %d, is EVEN\n", threads[i].tid, threads[i].id_y_part);
+		} else {
+			threads[i].sem_pend = &sem_odd;
+			//printf("Thread id: %s, id_y_part %d, is ODD\n", threads[i].tid, threads[i].id_y_part);
+		}
+	}
+}
+
+NextThread getNextThread(Thread* threads, int t_count) {
+	NextThread next;
+	next.odd_index = -1;
+	next.even_index = -1;
+
+	for (int i = t_count-1; i >= 0; i--) {
+		if (threads[i].state == NEW && threads[i].id_y_part % 2 == 0) {
+			next.even_index = i;
+		} else if (threads[i].state == NEW && threads[i].id_y_part % 2 == 1) {
+			next.odd_index = i;
+		}
+	}
+
+	return next;
 }
 
 int readFile(char* fileName, Thread** threads)//implement this method as per your desire to read the thread information from file
@@ -130,9 +191,12 @@ int readFile(char* fileName, Thread** threads)//implement this method as per you
 
 			// Take the first (and only) three chars of the thread number plus the null terminator
 			strncpy((*threads)[tempThreadCount].tid, tok, 4);
-			(*threads)[tempThreadCount].state = 0; //TODO: Implement states for threads
+			(*threads)[tempThreadCount].state = NEW;
 			(*threads)[tempThreadCount].retVal = 0; //TODO: Figure out what this is good for
 			(*threads)[tempThreadCount].handle = 0; //TODO: Figure out what this is good for
+
+			(*threads)[tempThreadCount].sem_pend = NULL;
+			(*threads)[tempThreadCount].id_y_part = -1;
 			parseCount++;
 		} else if (1 == parseCount) {
 			// Try converting string to int
