@@ -45,6 +45,7 @@ typedef struct NextThread {
 
 	int start_index_count;
 	int* start_indices;
+	int live_thread_count;
 } NextThread;
 
 //you can add more functions here if required
@@ -116,11 +117,8 @@ int main(int argc, char *argv[])
 
 			free(next.start_indices);
 
-			if(currentTime == 22){
-				// TODO: Find a way to get this decremented normally
-				// Maybe getNextThread can keep track of this and return it in the next struct
-				threadCount = 0;
-			}
+			threadCount = next.live_thread_count;
+			//printf("threadCount: %d\n", threadCount);
 		}
 	}
 
@@ -157,8 +155,13 @@ NextThread getNextThread(Thread* threads, int t_count, time_t currentTime) {
 	next.even_index = -1; //TODO: Remove this?
 	next.start_index_count = 0;
 	next.start_indices = NULL;
+	next.live_thread_count = 0;
 
 	for (int i = 0; i < t_count; i++) {
+		if (threads[i].state != TERMINATED) {
+			next.live_thread_count++;
+		}
+
 		if (threads[i].state == NEW && currentTime == (time_t)threads[i].startTime) {
 			// Enlarge array by 1
 			next.start_indices = realloc(next.start_indices, sizeof(int) * (next.start_index_count + 1));
