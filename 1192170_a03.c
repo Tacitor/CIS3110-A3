@@ -57,6 +57,22 @@ StarveSem checkForStarvation(Thread* threads, int t_count);
 void* threadRun(void* t);//the thread function, the code executed by each thread
 int readFile(char* fileName, Thread** threads);//function to read the file content and build array of threads
 
+void semaphore_wait(sem_t *sem)
+{
+    int n = sem_wait(sem);
+    if (n != 0) {
+		printf("[ERROR] sem_wait failed!\n");
+	}
+}
+
+void semaphore_signal(sem_t *sem)
+{
+    int n = sem_post(sem);
+    if (n != 0) {
+		printf("[ERROR] sem_post failed!\n");
+	}
+}
+
 int main(int argc, char *argv[])
 {
     //you can add some suitable code anywhere in main() if required
@@ -114,7 +130,7 @@ int main(int argc, char *argv[])
 				if (!started) {
 					// The first thread, in terms of creation time, enters first in its critical section.
 					// TODO: What if two threads have the same creation time?
-					sem_post(threads[next.start_indices[0]].sem_pend);
+					semaphore_signal(threads[next.start_indices[0]].sem_pend);
 					started = true;
 				}
 			}
@@ -137,10 +153,10 @@ int main(int argc, char *argv[])
 		//printf("[ALERT] [%ld] We're starved!\n", currentTime);
 		// Let the starved thread make progress
 		// TODO: Based on race conditions somethins t01 goes first and other times t05. Does this matter?
-		sem_post(starvation_sem.starve_resolution_sem);
+		semaphore_signal(starvation_sem.starve_resolution_sem);
 
 		// Wait for it to finish befre checking if we need to keep doing starve prevention
-		sem_wait(starvation_sem.starve_pend_sem);
+		semaphore_wait(starvation_sem.starve_pend_sem);
 
 		starvation_sem = checkForStarvation(threads, threads_ptr_len);
 	}
@@ -328,14 +344,14 @@ void* threadRun(void* t)//implement this function in a suitable way
 	logStart(((Thread*)t)->tid);
 	
 //your entry section synchronization logic will appear here
-	sem_wait(((Thread*)t)->sem_pend);
+	semaphore_wait(((Thread*)t)->sem_pend);
 
 	//critical section starts here, it has only the following printf statement
 	printf("[%ld] Thread %s is in its critical section\n",getCurrentTime(), ((Thread*)t)->tid);
 	//critical section ends here
 
 //your exit section synchronization logic will appear here
-	sem_post(((Thread*)t)->sem_post);
+	semaphore_signal(((Thread*)t)->sem_post);
 
 	((Thread*)t)->state = TERMINATED;
 	logFinish(((Thread*)t)->tid);
