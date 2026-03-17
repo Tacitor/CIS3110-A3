@@ -352,6 +352,9 @@ void logFinish(char* tID)//do not change this method; you can use this method as
 void* threadRun(void* t)//implement this function in a suitable way
 {
 	logStart(((Thread*)t)->tid);
+	struct timespec sleep_time;
+	sleep_time.tv_nsec = 200000000; //sleep for 100ms
+	nanosleep(&sleep_time, &sleep_time);
 	
 //your entry section synchronization logic will appear here
 	semaphore_wait(((Thread*)t)->sem_pend);
