@@ -1,0 +1,94 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdbool.h>
+
+typedef struct QItem {
+	int* value;
+	struct QItem* next;
+} QItem;
+
+void q_append(QItem* to_add, QItem* head);
+QItem* q_pop(QItem** head);
+int q_len(QItem* head);
+void q_print(QItem* head);
+
+int main(int argc, char *argv[]) {
+    int a = 1; int b = 2; int c = 3;
+    QItem one;
+    one.value = &a;
+    one.next = NULL;
+    QItem two;
+    two.value = &b;
+    two.next = NULL;
+    QItem three;
+    three.value = &c;
+    three.next = NULL;
+
+    q_append(&two, &one);
+    q_append(&three, &two);
+
+    q_print(&one);
+    q_print(&two);
+    q_print(&three);
+
+    QItem* head = &one;
+    printf("len: %d\n", q_len(head));
+    QItem* out = q_pop(&head);
+    q_print(head);
+    q_print(out);
+    printf("len: %d\n", q_len(head));
+
+    out = q_pop(&head);
+    q_print(head);
+    q_print(out);
+    printf("len: %d\n", q_len(head));
+    printf("len: %d\n", q_len(NULL));
+    return 0;
+}
+
+void q_append(QItem* to_add, QItem* head) {
+	QItem* next_item = head;
+
+	while(next_item->next != NULL) {
+		next_item = next_item->next;
+	}
+
+	next_item->next = to_add;
+	to_add->next = NULL;
+}
+
+QItem* q_pop(QItem** head) {
+	QItem* head_item = *head;
+	*head = head_item->next;
+    head_item->next = NULL;
+
+	return head_item;
+}
+
+int q_len(QItem* head) {
+    if (head == NULL) {
+        return 0;
+    }
+
+    int len = 1;
+	QItem* next_item = head->next;
+
+	while(next_item != NULL) {
+        len++;
+		next_item = next_item->next;
+	}
+
+    return len;
+}
+
+void q_print(QItem* head) {
+	QItem* next_item = head->next;
+    printf("[%d", *(head->value));
+
+	while(next_item != NULL) {
+        printf(", %d", *(next_item->value));
+		next_item = next_item->next;
+	}
+    printf("]\n");
+}
