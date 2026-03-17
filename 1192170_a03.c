@@ -49,6 +49,16 @@ typedef struct StarveSem {
 	sem_t* starve_pend_sem;
 } StarveSem;
 
+typedef struct QItem {
+	Thread* value;
+	struct QItem* next;
+} QItem;
+
+void q_append(QItem* to_add, QItem* head);
+QItem* q_pop(QItem** head);
+int q_len(QItem* head);
+void q_print(QItem* head);
+
 //you can add more functions here if required
 void preProcessThreads(Thread* threads, int t_count);
 NextThread getNextThread(Thread* threads, int t_count, time_t currentTime);
@@ -369,4 +379,50 @@ long getCurrentTime()//invoke this method whenever you want to check how much ti
 	time_t now;
 	now = time(NULL);
 	return now-programClock;
+}
+
+void q_append(QItem* to_add, QItem* head) {
+	QItem* next_item = head;
+
+	while(next_item->next != NULL) {
+		next_item = next_item->next;
+	}
+
+	next_item->next = to_add;
+	to_add->next = NULL;
+}
+
+QItem* q_pop(QItem** head) {
+	QItem* head_item = *head;
+	*head = head_item->next;
+    head_item->next = NULL;
+
+	return head_item;
+}
+
+int q_len(QItem* head) {
+    if (head == NULL) {
+        return 0;
+    }
+
+    int len = 1;
+	QItem* next_item = head->next;
+
+	while(next_item != NULL) {
+        len++;
+		next_item = next_item->next;
+	}
+
+    return len;
+}
+
+void q_print(QItem* head) {
+	QItem* next_item = head->next;
+    printf("[%d", *(head->value->tid));
+
+	while(next_item != NULL) {
+        printf(", %d", *(next_item->value->tid));
+		next_item = next_item->next;
+	}
+    printf("]\n");
 }
